@@ -2,16 +2,13 @@
 
 # Unconditional Audio Waveform Diffusion
 
-# To execute this experiment on a single GPU, run:
-# python train.py exp=drum_diffusion trainer.gpus=1 datamodule.dataset.path=<path/to/your/train/data>
-
 module: main.diffusion_module
-batch_size: 1 # mini-batch size (increase to speed up at the cost of memory)
-accumulate_grad_batches: 32 # use to increase batch size on single GPU -> effective batch size = (batch_size * accumulate_grad_batches)
-num_workers: 8 # num workers for data loading
+batch_size: 8 # mini-batch size (increase to speed up at the cost of memory)
+accumulate_grad_batches: 4 # use to increase batch size on single GPU -> effective batch size = (batch_size * accumulate_grad_batches)
+num_workers: 4 # num workers for data loading
 
 sampling_rate: 44100 # sampling rate (44.1kHz is the music industry standard)
-length: 32768 # Length of audio in samples (32768 samples @ 44.1kHz ~ 0.75 seconds)
+length: 65536 #524288 #32768 # Length of audio in samples (32768 samples @ 44.1kHz ~ 0.75 seconds)
 channels: 2 # stereo audio
 val_log_every_n_steps: 1000 # Logging interval (Validation and audio generation every n steps)
 # ckpt_every_n_steps: 4000 # Use if multiple checkpoints wanted
@@ -31,19 +28,19 @@ model:
     net_t:
       _target_: ${module}.UNetT # The model type used for diffusion (U-Net V0 in this case)
     in_channels: 2 # U-Net: number of input/output (audio) channels
-    channels: [32, 32, 64, 64, 128, 128, 256, 256] # U-Net: channels at each layer
-    factors: [1, 2, 2, 2, 2, 2, 2, 2] # U-Net: downsampling and upsampling factors at each layer
-    items: [2, 2, 2, 2, 2, 2, 4, 4] # U-Net: number of repeating items at each layer
-    attentions: [0, 0, 0, 0, 0, 1, 1, 1] # U-Net: attention enabled/disabled at each layer
+    channels: [8, 32, 64, 128, 256, 512, 512, 1024, 1024] # U-Net: channels at each layer
+    factors: [1, 4, 4, 4, 2, 2, 2, 2, 2] # U-Net: downsampling and upsampling factors at each layer
+    items: [1, 2, 2, 2, 2, 2, 2, 4, 4] # U-Net: number of repeating items at each layer
+    attentions: [0, 0, 0, 0, 0, 1, 1, 1, 1] # U-Net: attention enabled/disabled at each layer
     attention_heads: 8 # U-Net: number of attention heads per attention item
-    attention_features: 64 # U-Net: number of attention features per attention item    
+    attention_features: 64 # U-Net: number of attention features per attention item   
 
 # To specify train-valid datasets, datamodule must be reconfigured
 datamodule:
   _target_: main.diffusion_module.Datamodule
   dataset:
     _target_: audio_data_pytorch.WAVDataset
-    path: ./data/wav_dataset # can overried when calling train.py
+    path: ./ml-data # can overried when calling train.py
     recursive: True
     sample_rate: ${sampling_rate}
     transforms:
@@ -61,8 +58,8 @@ datamodule:
 
 callbacks:
   rich_progress_bar:
-    _target_: pytorch_lightning.callbacks.RichProgressBar
-    # _target_: pytorch_lightning.callbacks.TQDMProgressBar # use if RichProgressBar creates issues
+  #   _target_: pytorch_lightning.callbacks.RichProgressBar
+    _target_: pytorch_lightning.callbacks.TQDMProgressBar # use if RichProgressBar creates issues
 
   model_checkpoint:
     _target_: pytorch_lightning.callbacks.ModelCheckpoint
@@ -79,35 +76,18 @@ callbacks:
     _target_: pytorch_lightning.callbacks.RichModelSummary
     max_depth: 2
 
-  audio_samples_logger:
-    _target_: main.diffusion_module.SampleLogger
-    num_items: 4 # number of separate samples to be generated
-    channels: ${channels} # number of audio channels
-    sampling_rate: ${sampling_rate} # audio sampling rate
-    length: ${length} # length of generated sample
-    sampling_steps: [50] # number of steps per sample
-    use_ema_model: True # Use EMA for logger inference
-
-loggers:
-  wandb:
-    _target_: pytorch_lightning.loggers.wandb.WandbLogger
-    project: ${oc.env:WANDB_PROJECT} # defined in env var
-    entity: ${oc.env:WANDB_ENTITY} # defined in env var
-    name: unconditional_diffusion # name of run
-    # offline: False  # set True to store all logs only locally
-    job_type: "train"
-    group: "" # Set a group name if desired
-    save_dir: ${logs_dir}
-
 trainer:
   _target_: pytorch_lightning.Trainer
-  gpus: 0 # Set `1` to train on GPU, `0` to train on CPU only, and `-1` to train on all GPUs, default `0`
-  precision: 16 # Precision used for tensors (`32` offers higher precision, but `16` is used to save memory)
+  accelerator: gpu #cpu
+  strategy: ddp #deepspeed, fsdp, ddp, ddp_spawn, single_device, etc. # Choose distributed training strategy
+  devices: 2 # specify number of GPUs to train on or individual gpus (i.e. [0, 1, 2, ...])
+  num_nodes: 1 # number of nodes
+  gpus: -1 # Set `1` to train on GPU, `0` to train on CPU only, and `-1` to train on all GPUs
+  precision: 32 # Precision used for tensors (`32` offers higher precision, but `16` is used to save memory)
   min_epochs: 0 # minimum number of epochs
-  max_epochs: -1 # max number of epochs (-1 = infinite run)
+  max_epochs: 10 #-1 # max number of epochs (-1 = infinite run)
   enable_model_summary: False
-  log_every_n_steps: 1 # Logs training metrics every n steps
-  # limit_val_batches: 10 # Use to limit the number of valid batches run (e.g. 10 stops training at 10 batches)
+  log_every_n_steps: 100 # Logs training metrics every n steps
   check_val_every_n_epoch: null
   val_check_interval: ${val_log_every_n_steps} # Validation interval (check valid set and generate audio every n steps)
   accumulate_grad_batches: ${accumulate_grad_batches} # use to increase batch size on single GPU
