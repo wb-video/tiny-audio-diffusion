@@ -1,7 +1,7 @@
 # Custom ignore
 __pycache__
 .mypy_cache
-.env
+# .env
 .DS_Store
 .DS_Store/
 .hydra
@@ -21,6 +21,7 @@ percussion/
 archive/
 ignore/
 video_samples/
+.python-version
 
 # Python Template
 # Byte-compiled / optimized / DLL files
@@ -145,7 +146,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+# .env
 .venv
 env/
 venv/
